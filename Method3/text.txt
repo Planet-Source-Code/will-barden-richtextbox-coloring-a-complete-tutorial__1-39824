@@ -1,0 +1,384 @@
+Option Explicit
+
+' One problem -
+
+' 1). When locating the word to color in the line, since
+' Instr is used, the first instance of the word is always
+' colored, so -
+'   Private Sub Moo(ByVal Sub As Moo) As Sub
+' only the first Sub will be colored.
+' The obvious solution to solving this would be to
+' have a variable to track our current position in the
+' line, but this is proving difficult :(
+
+Const COL_KEYWORD = &HC00000    ' dark blue
+Const COL_COMMENT = &H8000&     ' middle green
+Const CHAR_COMMENT = "'"        ' comment line char
+
+Type WORD_TYPE
+    Text As String  ' word to be colored
+    Color As Long   ' color to color the word :)
+End Type
+
+Type LETTER_TYPE
+    Start As Long   ' first time the letter appears in the list
+    Finish As Long  ' last time the letter appears in the list
+End Type
+
+Dim Words() As WORD_TYPE
+Dim Letters() As LETTER_TYPE
+Dim Strings() As String
+Public sText As String
+
+Public Sub InitWords()
+    ' initialize the array of words
+    ReDim Words(0 To 23)
+    Words(0).Text = "Option"
+    Words(0).Color = COL_KEYWORD
+    Words(1).Text = "Explicit"
+    Words(1).Color = COL_KEYWORD
+    Words(2).Text = "Type"
+    Words(2).Color = COL_KEYWORD
+    Words(3).Text = "As"
+    Words(3).Color = COL_KEYWORD
+    Words(4).Text = "String"
+    Words(4).Color = COL_KEYWORD
+    Words(5).Text = "End"
+    Words(5).Color = COL_KEYWORD
+    Words(6).Text = "Dim"
+    Words(6).Color = COL_KEYWORD
+    Words(7).Text = "ReDim"
+    Words(7).Color = COL_KEYWORD
+    Words(8).Text = "Public"
+    Words(8).Color = COL_KEYWORD
+    Words(9).Text = "Sub"
+    Words(9).Color = COL_KEYWORD
+    Words(10).Text = "ByVal"
+    Words(10).Color = COL_KEYWORD
+    Words(11).Text = "If"
+    Words(11).Color = COL_KEYWORD
+    Words(12).Text = "Then"
+    Words(12).Color = COL_KEYWORD
+    Words(13).Text = "Else"
+    Words(13).Color = COL_KEYWORD
+    Words(14).Text = "Private"
+    Words(14).Color = COL_KEYWORD
+    Words(15).Text = "For"
+    Words(15).Color = COL_KEYWORD
+    Words(16).Text = "Next"
+    Words(16).Color = COL_KEYWORD
+    Words(17).Text = "To"
+    Words(17).Color = COL_KEYWORD
+    Words(18).Text = "Exit"
+    Words(18).Color = COL_KEYWORD
+    Words(19).Text = "Do"
+    Words(19).Color = COL_KEYWORD
+    Words(20).Text = "Loop"
+    Words(20).Color = COL_KEYWORD
+    Words(21).Text = "While"
+    Words(21).Color = COL_KEYWORD
+    Words(22).Text = "Until"
+    Words(22).Color = COL_KEYWORD
+    Words(23).Text = "DoEvents"
+    Words(23).Color = COL_KEYWORD
+    
+    ' sort the array
+    CombSort Words
+    
+    ' build the index of letter positions
+    BuildIndex Letters, Words
+End Sub
+
+Public Sub DoColor(RTB As RichTextBox, ByVal lStart As Long, ByVal lFinish As Long)
+Dim sWords()    As String
+Dim sLine       As String
+Dim sChar       As String
+Dim lCurPos     As Long
+Dim lIndex      As Long
+Dim lColor      As Long
+Dim lPos        As Long
+Dim lPos2       As Long
+Dim i           As Long
+
+    ' grab the line
+    sLine = RemoveEOL(Trim$(Mid$(sText, lStart, lFinish - lStart)))
+    
+    ' remove any strings from the line, so that
+    ' they're not including in the coloring
+    lPos = InStr(1, sLine, Chr$(34))
+    Do While lPos <> 0
+        ' find the next " char to make a pair
+        lPos2 = InStr(lPos + 1, sLine, Chr$(34))
+        If lPos2 <> 0 Then
+            ' we've found a pair, so remove it
+            sLine = Mid$(sLine, 1, lPos - 1) & Mid$(sLine, lPos2 + 1)
+            ' find the next starting "
+            lPos = InStr(lPos2 + 1, sLine, Chr$(34))
+        Else
+            Exit Do
+        End If
+        DoEvents
+    Loop
+    
+    ' this next bit is where the problem lies. Splitting the text
+    ' at each " " is not reliable - we need another function to
+    ' reliably locate each word as it needs to be colored
+    ' sWords = Split(sLine, " ")
+    sWords = SplitWords(sLine)
+    
+    ' check each word against the list
+    lCurPos = 1
+    ' search for each word in the array
+    For i = LBound(sWords) To UBound(sWords)
+    
+        If Trim$(sWords(i)) <> "" Then
+    
+            ' check for comment in the middle of a line
+            If Left$(sWords(i), 1) = CHAR_COMMENT Then
+            
+                ' color the rest of the line
+                RTB.SelStart = InStr(lStart, sText, sWords(i)) - 1
+                RTB.SelLength = Len(sWords(i))
+                RTB.SelColor = COL_COMMENT
+            
+            Else
+        
+                ' its a normal keyword - so color it
+                ' first get the array positions from
+                ' the index
+                sChar = Left$(LCase$(sWords(i)), 1)
+                ' if we've got a valid alphabetic char
+                If sChar <> "" Then
+                    ' convert this char to an index in the letters array
+                    lIndex = Asc(sChar) - 97
+                    ' if the index is a valid one - this
+                    ' means that the text is a word, so
+                    ' we should try to color it
+                    If lIndex >= 0 And lIndex < UBound(Letters) Then
+                        ' color the word, passing the index parameters
+                        lColor = GetColor(sWords(i), _
+                                    Letters(lIndex).Start, _
+                                    Letters(lIndex).Finish)
+                        ' if a color was returned - color the word
+                        If lColor Then
+                            ' locate the word in the line
+                            RTB.SelStart = InStr(lStart, sText, sWords(i)) - 1
+                            RTB.SelLength = Len(sWords(i))
+                            RTB.SelColor = lColor
+                        End If
+                    End If
+                End If
+            End If
+        End If ' sWords(i) <> ""
+        
+        ' move the current position within the line on
+        lCurPos = lCurPos + Len(sWords(i))
+        
+    ' move on
+    Next i
+        
+End Sub
+
+Private Function RemoveEOL(ByVal sText As String) As String
+Dim sTmp As String
+    ' remove leading or trailing vbCrLf from the string
+    sTmp = sText
+    If Left$(sTmp, 2) = vbCrLf Then
+        sTmp = Right$(sTmp, Len(sTmp) - 2)
+    End If
+    If Right$(sTmp, 2) = vbCrLf Then
+        sTmp = Left$(sTmp, Len(sTmp) - 2)
+    End If
+    RemoveEOL = sTmp
+End Function
+
+Private Function GetColor(ByVal sWord As String, _
+                          ByVal Lo As Long, _
+                          ByVal Hi As Long) As Long
+Dim lHi As Long
+Dim lLo As Long
+Dim lMid As Long
+    
+    ' binary search the words array
+    ' return the color if a match is found
+    lLo = Lo
+    lHi = Hi
+    Do While lHi >= lLo
+        ' get the new midpoint
+        lMid = (lLo + lHi) / 2
+        ' check the item at this point
+        If LCase$(Words(lMid).Text) = LCase$(sWord) Then
+            GetColor = Words(lMid).Color
+            Exit Do
+        End If
+        ' if the midpoint is too high
+        If LCase$(Words(lMid).Text) > LCase$(sWord) Then
+            ' move down
+            lHi = lMid - 1
+        Else
+            ' move up
+            lLo = lMid + 1
+        End If
+    DoEvents
+    Loop
+    
+End Function
+
+Private Sub BuildIndex(lArr() As LETTER_TYPE, wArr() As WORD_TYPE)
+Dim i As Long, j As Long
+Dim sChar As String
+Dim bStart As Boolean
+
+    ' go through each letter in the alphabet
+    ReDim Letters(25)
+    For i = 0 To 25
+        ' get the current char
+        sChar = Chr$(i + 97)
+        ' find the first and last instances of the letter
+        For j = LBound(Words) To UBound(Words)
+            If Left$(LCase$(Words(j).Text), 1) = sChar Then
+                If Not bStart Then
+                    ' found the start
+                    bStart = True
+                    Letters(i).Start = j
+                End If
+                ' if we've hit the end of the list
+                If j = UBound(Words) Then
+                    Letters(i).Finish = j
+                    Exit Sub
+                End If
+            Else
+                ' its a different char
+                If bStart Then
+                    ' we've found the end
+                    Letters(i).Finish = j - 1
+                    bStart = False
+                    Exit For
+                End If
+                ' see if we've gone too far -
+                ' there are no words beginning with
+                ' this letter in the list
+                If Left$(LCase$(Words(j).Text), 1) > sChar Then
+                    Exit For
+                End If
+            End If
+        Next j
+    Next i
+    
+End Sub
+
+    ' somewhere along the line we have to determine where
+    ' we move in and out of a string with quotes, and where
+    ' comments begin. If a comment has started, we can cut it
+    ' out and treat it as one large word, saving lots of time
+
+Private Function SplitWords(ByVal sText As String) As String()
+Dim i As Long, lPos As Long
+Dim sWords() As String
+Dim sWordBreaks(0 To 9) As String
+Dim lBreakPoints() As Long
+Dim lBreak As Long
+Dim bInQuote As Boolean
+    
+    ' list of word break characters
+    sWordBreaks(0) = " "
+    sWordBreaks(1) = "("
+    sWordBreaks(2) = ")"
+    sWordBreaks(3) = "<"
+    sWordBreaks(4) = ">"
+    sWordBreaks(5) = "."
+    sWordBreaks(6) = ","
+    sWordBreaks(7) = "="
+    sWordBreaks(8) = Chr$(34)
+    sWordBreaks(9) = "'" ' comments
+    ReDim lBreakPoints(UBound(sWordBreaks))
+
+    ' get them words!
+    ReDim sWords(0)
+    lPos = 1
+    Do
+    
+        ' locate the word break points
+        For i = 0 To UBound(sWordBreaks)
+            lBreakPoints(i) = InStr(lPos, sText, sWordBreaks(i))
+        Next i
+        
+        ' now work out which is closest
+        lBreak = Len(sText) + 1
+        For i = 0 To UBound(lBreakPoints)
+            If lBreakPoints(i) <> 0 Then
+                If lBreakPoints(i) < lBreak Then lBreak = lBreakPoints(i)
+            End If
+        Next i
+    
+        ' now split out the word
+        ' if no break point was found, then we've
+        ' hit the end of the line, so add all the rest
+        If lBreak = Len(sText) + 1 Then
+            sWords(UBound(sWords)) = Mid$(sText, lPos)
+        Else
+            ' add this word - first check for a comment
+            If Mid$(sText, lBreak, 1) = "'" Then
+                sWords(UBound(sWords)) = Mid$(sText, lPos)
+                SplitWords = sWords
+                Exit Function
+            Else
+                sWords(UBound(sWords)) = Mid$(sText, lPos, lBreak - lPos)
+            End If
+        End If
+        ReDim Preserve sWords(UBound(sWords) + 1)
+    
+        ' move the pointer on a bit
+        lPos = lBreak + 1
+        
+        ' setup the exit condition
+        If lPos >= Len(sText) Then Exit Do
+    
+    Loop
+
+    ' return the array
+    SplitWords = sWords
+
+End Function
+
+Private Sub CombSort(Arr() As WORD_TYPE)
+Dim i As Long, j As Long, t As WORD_TYPE
+Dim swapped As Boolean
+Dim gap As Long
+    
+    ' this is a standard comb sort - you could replace
+    ' this with any other sorting algorithm, I just prefer
+    ' this one because a) i wrote it :), and b) it performs
+    ' well across all ranges of input arrays - it makes
+    ' no assumptions about how sorted the array already
+    ' is, because it doesn't matter.
+    ' The comb sort is a slight variation on the bubblesort,
+    ' and i know what you're thinking - ewwww, bubble sorts -
+    ' but you'd be wrong, the comb is only fractionally
+    ' slower than a quicksort... so enjoy!
+    ' for more on the combsort, read here:
+    ' http://yagni.com/combsort/index.php
+    ' http://cs.clackamas.cc.or.us/molatore/cs260Spr01/combsort.htm
+    
+    gap = UBound(Arr)
+    
+    Do
+        gap = (gap * 10) \ 13
+        If gap = 9 Or gap = 10 Then gap = 11
+        If gap < 1 Then gap = 1
+        
+        swapped = False
+        For i = 0 To UBound(Arr) - gap
+            j = i + gap
+            If Arr(i).Text > Arr(j).Text Then
+                LSet t = Arr(j)
+                LSet Arr(j) = Arr(i)
+                LSet Arr(i) = t
+                swapped = True
+            End If
+        Next i
+        
+        If (gap = 1) And (Not swapped) Then Exit Do
+    Loop
+    
+End Sub

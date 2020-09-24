@@ -1,0 +1,78 @@
+Option Explicit
+
+'#---------------------------------------------------------------------------#
+'#  apis, consts, declares, enums
+'#---------------------------------------------------------------------------#
+Public Type SAFEARRAYBOUND
+  cElements As Long                 ' same as UBound
+  lLbound   As Long                 ' same as LBound
+End Type
+
+Public Type SAFEARRAYHEADER
+  dimensions    As Integer          ' array dimensions
+  fFeatures     As Integer          ' unused
+  DataSize      As Long             ' size of each element
+  cLocks        As Long             ' unused
+  dataPointer   As Long             ' location of first element
+  sab           As SAFEARRAYBOUND   ' extra info
+End Type
+
+' special pointer declarations
+Public Declare Function ArrPtr& Lib "msvbvm60.dll" Alias "VarPtr" (ptr() As Any)
+Public Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (pDst As Any, pSrc As Any, ByVal ByteLen As Long)
+
+Public Header As SAFEARRAYHEADER     ' our new header
+Public Map() As Integer             ' array to map onto the string
+Public sString As String             ' local copy of the string
+
+'#---------------------------------------------------------------------------#
+'#  methods
+'#---------------------------------------------------------------------------#
+
+' //--[GetChar]-------------------------------------------------------------//
+'
+'  This function simply exposes the internal string
+'  map to the class owner
+'
+Public Function GetChar(ByVal Index As Long) As Byte
+    ' return the char at that position
+    GetChar = Map(Index)
+End Function
+
+'#---------------------------------------------------------------------------#
+'#  Public
+'#---------------------------------------------------------------------------#
+
+' //--[SetMap]--------------------------------------------------------------//
+'
+'  This is the real meat of the class. It sets up a dummy
+'  SAFEARRAYHEADER which points to the string. Then it tells
+'  the bString array to use this header, so that effectively,
+'  the array now reads data from the strings location :)
+'
+Public Sub SetMap()
+    ' setup the safearrayheader
+    With Header
+        .dimensions = 1
+        .DataSize = 2
+        .dataPointer = StrPtr(sString)
+        .sab.cElements = Len(sString)
+    End With
+    
+    ' tell the array to use our header
+    CopyMemory ByVal ArrPtr(Map), VarPtr(Header), 4
+End Sub
+
+' //--[KillMap]--------------------------------------------------------------//
+'
+'  This sub must be called in order to set everything
+'  back to how it was at the start, and to how VB
+'  expects it to be. If you don't call this, VB will GPF
+'
+Public Sub KillMap()
+    ' null out the custom header
+    CopyMemory ByVal ArrPtr(Map), 0&, 4
+End Sub
+
+
+
